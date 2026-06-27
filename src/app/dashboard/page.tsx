@@ -107,7 +107,7 @@ export default function DashboardPage() {
   }
 
   useEffect(() => {
-    handleGenerate()
+    handleFetchLive()
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
