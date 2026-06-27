@@ -27,8 +27,9 @@ export async function proxy(request: NextRequest) {
 
   const isAuthPage = request.nextUrl.pathname.startsWith('/login') ||
     request.nextUrl.pathname.startsWith('/register')
+  const isDashboard = request.nextUrl.pathname.startsWith('/dashboard')
 
-  if (!user && !isAuthPage) {
+  if (!user && isDashboard) {
     return NextResponse.redirect(new URL('/login', request.url))
   }
 
