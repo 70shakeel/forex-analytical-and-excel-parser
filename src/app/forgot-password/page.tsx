@@ -31,6 +31,14 @@ export default function ForgotPasswordPage() {
     setLoading(false)
   }
 
+  const domain = email.split('@')[1]?.toLowerCase() ?? ''
+  const mailProvider =
+    domain.includes('gmail') ? { label: 'Open Gmail', href: 'https://mail.google.com' } :
+    domain.includes('outlook') || domain.includes('hotmail') || domain.includes('live') || domain.includes('msn') ? { label: 'Open Outlook', href: 'https://outlook.live.com' } :
+    domain.includes('yahoo') ? { label: 'Open Yahoo Mail', href: 'https://mail.yahoo.com' } :
+    domain.includes('icloud') || domain.includes('me.com') || domain.includes('mac.com') ? { label: 'Open Mail', href: 'https://www.icloud.com/mail' } :
+    null
+
   if (sent) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background p-4">
@@ -45,6 +53,16 @@ export default function ForgotPasswordPage() {
             We sent a password reset link to{' '}
             <span className="text-foreground font-medium">{email}</span>.
           </p>
+          {mailProvider && (
+            <a
+              href={mailProvider.href}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-block w-full h-10 leading-10 bg-emerald-500 hover:bg-emerald-600 text-black text-sm font-bold rounded-md transition-colors"
+            >
+              {mailProvider.label}
+            </a>
+          )}
           <Link href="/login" className="inline-block text-sm text-emerald-400 hover:underline">
             Back to sign in
           </Link>
