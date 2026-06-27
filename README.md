@@ -1,5 +1,7 @@
 # ForexAnalytics
 
+**Live site:** https://forex-analytical-and-excel-parser.vercel.app/
+
 Statistical edge tools for currency traders. Fetch live OHLC data, analyze daily ranges, and visualize technical indicators — all in one dashboard.
 
 ## Features
