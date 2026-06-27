@@ -11,7 +11,9 @@ import { Badge } from '@/components/ui/badge'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { RangeBarChart } from '@/components/forex/range-bar-chart'
 import { RangeLineChart } from '@/components/forex/range-line-chart'
+import { TradingChart } from '@/components/forex/trading-chart'
 import { generatePairData, parseAndAnalyze, detectMultiplier, type AnalyticsResult } from '@/lib/forex'
+import type { OhlcBar } from '@/app/api/forex/route'
 import { toast } from 'sonner'
 import { TrendingUp, BarChart2, Copy, Wand2, RefreshCw, Wifi, WifiOff } from 'lucide-react'
 
@@ -29,6 +31,7 @@ export default function DashboardPage() {
   const [generating, setGenerating] = useState(false)
   const [fetching, setFetching] = useState(false)
   const [dataSource, setDataSource] = useState<'simulated' | 'live' | null>(null)
+  const [candles, setCandles] = useState<OhlcBar[]>([])
 
   function handleSymbolChange(val: string) {
     setSymbol(val.toUpperCase())
@@ -64,6 +67,7 @@ export default function DashboardPage() {
       }
 
       setRawData(json.tsv)
+      setCandles(json.candles ?? [])
       const parsed = parseAndAnalyze(json.tsv, parseFloat(multiplier))
       if (parsed) {
         setResult(parsed)
@@ -229,9 +233,10 @@ export default function DashboardPage() {
           {/* Charts & table tabs */}
           <Card>
             <CardContent className="pt-4">
-              <Tabs defaultValue="bar">
+              <Tabs defaultValue="chart">
                 <div className="flex items-center justify-between mb-4">
                   <TabsList className="h-8">
+                    <TabsTrigger value="chart" className="text-xs">Chart</TabsTrigger>
                     <TabsTrigger value="bar" className="text-xs">Day-of-Week</TabsTrigger>
                     <TabsTrigger value="line" className="text-xs">Range History</TabsTrigger>
                     <TabsTrigger value="table" className="text-xs">Day Stats Table</TabsTrigger>
@@ -240,6 +245,17 @@ export default function DashboardPage() {
                     {result ? `${result.rows.length} days` : 'No data'}
                   </Badge>
                 </div>
+
+                <TabsContent value="chart">
+                  {candles.length > 0 ? (
+                    <TradingChart candles={candles} symbol={symbol} />
+                  ) : (
+                    <div className="h-[380px] flex flex-col items-center justify-center gap-2 text-muted-foreground text-sm">
+                      <Wifi className="h-8 w-8 opacity-30" />
+                      <span>Fetch live data to see the candlestick chart</span>
+                    </div>
+                  )}
+                </TabsContent>
 
                 <TabsContent value="bar">
                   {result ? (
