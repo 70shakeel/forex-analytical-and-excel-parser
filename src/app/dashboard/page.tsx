@@ -13,7 +13,7 @@ import { RangeBarChart } from '@/components/forex/range-bar-chart'
 import { RangeLineChart } from '@/components/forex/range-line-chart'
 import { generatePairData, parseAndAnalyze, detectMultiplier, type AnalyticsResult } from '@/lib/forex'
 import { toast } from 'sonner'
-import { TrendingUp, BarChart2, Copy, Wand2, RefreshCw } from 'lucide-react'
+import { TrendingUp, BarChart2, Copy, Wand2, RefreshCw, Wifi, WifiOff } from 'lucide-react'
 
 const MULTIPLIER_OPTIONS = [
   { value: '10000', label: 'Standard (4/5 dec) — GBPUSD, EURUSD' },
@@ -27,6 +27,8 @@ export default function DashboardPage() {
   const [rawData, setRawData] = useState('')
   const [result, setResult] = useState<AnalyticsResult | null>(null)
   const [generating, setGenerating] = useState(false)
+  const [fetching, setFetching] = useState(false)
+  const [dataSource, setDataSource] = useState<'simulated' | 'live' | null>(null)
 
   function handleSymbolChange(val: string) {
     setSymbol(val.toUpperCase())
@@ -40,14 +42,44 @@ export default function DashboardPage() {
     const res = parseAndAnalyze(data, parseFloat(multiplier))
     if (res) {
       setResult(res)
-      toast.success(`Generated 65-day history for ${symbol}`)
+      setDataSource('simulated')
+      toast.success(`Simulated 65-day history for ${symbol}`)
     }
     setGenerating(false)
   }
 
+  async function handleFetchLive() {
+    if (!symbol.trim()) {
+      toast.error('Enter a symbol first')
+      return
+    }
+    setFetching(true)
+    try {
+      const res = await fetch(`/api/forex?symbol=${encodeURIComponent(symbol)}&outputsize=65`)
+      const json = await res.json()
+
+      if (!res.ok) {
+        toast.error(json.error ?? 'Failed to fetch live data')
+        return
+      }
+
+      setRawData(json.tsv)
+      const parsed = parseAndAnalyze(json.tsv, parseFloat(multiplier))
+      if (parsed) {
+        setResult(parsed)
+        setDataSource('live')
+        toast.success(`Loaded ${json.count} days of live data for ${symbol}`)
+      }
+    } catch {
+      toast.error('Network error — check your connection')
+    } finally {
+      setFetching(false)
+    }
+  }
+
   function handleParse() {
     if (!rawData.trim()) {
-      toast.error('Paste data or generate first')
+      toast.error('Paste data or fetch/generate first')
       return
     }
     const res = parseAndAnalyze(rawData, parseFloat(multiplier))
@@ -77,14 +109,29 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-xl font-bold flex items-center gap-2">
-          <TrendingUp className="h-5 w-5 text-emerald-400" />
-          Forex Statistical Analytics
-        </h1>
-        <p className="text-muted-foreground text-sm mt-1">
-          Generate or paste High/Low data to calculate pip range statistics and export to Excel.
-        </p>
+      <div className="flex items-start justify-between">
+        <div>
+          <h1 className="text-xl font-bold flex items-center gap-2">
+            <TrendingUp className="h-5 w-5 text-emerald-400" />
+            Forex Statistical Analytics
+          </h1>
+          <p className="text-muted-foreground text-sm mt-1">
+            Fetch live data or paste your own High/Low history to calculate pip range statistics.
+          </p>
+        </div>
+        {dataSource && (
+          <Badge
+            variant="outline"
+            className={`flex items-center gap-1.5 text-xs ${
+              dataSource === 'live'
+                ? 'text-emerald-400 border-emerald-500/40'
+                : 'text-amber-400 border-amber-500/40'
+            }`}
+          >
+            {dataSource === 'live' ? <Wifi className="h-3 w-3" /> : <WifiOff className="h-3 w-3" />}
+            {dataSource === 'live' ? 'Live data' : 'Simulated'}
+          </Badge>
+        )}
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -121,22 +168,40 @@ export default function DashboardPage() {
               </Select>
             </div>
 
-            <Button onClick={handleGenerate} disabled={generating} className="w-full text-xs" variant="outline">
+            {/* Live fetch — primary action */}
+            <Button
+              onClick={handleFetchLive}
+              disabled={fetching}
+              className="w-full bg-emerald-500 hover:bg-emerald-600 text-black font-bold text-xs"
+            >
+              <Wifi className="h-3 w-3 mr-1.5" />
+              {fetching ? 'Fetching live data…' : 'Fetch Live Data'}
+            </Button>
+
+            {/* Simulated fallback */}
+            <Button
+              onClick={handleGenerate}
+              disabled={generating}
+              className="w-full text-xs"
+              variant="outline"
+            >
               <Wand2 className="h-3 w-3 mr-1" />
-              Generate 65-Day History
+              Simulate 65-Day History
             </Button>
 
             <div className="space-y-2">
-              <Label className="text-xs uppercase tracking-wider text-muted-foreground">Raw Data (Date High Low)</Label>
+              <Label className="text-xs uppercase tracking-wider text-muted-foreground">
+                Raw Data (Date High Low)
+              </Label>
               <textarea
-                className="w-full h-36 bg-muted/30 border border-border rounded-lg p-2 text-xs font-mono resize-none focus:outline-none focus:ring-1 focus:ring-emerald-500 text-muted-foreground"
+                className="w-full h-32 bg-muted/30 border border-border rounded-lg p-2 text-xs font-mono resize-none focus:outline-none focus:ring-1 focus:ring-emerald-500 text-muted-foreground"
                 placeholder={`Date\tHigh\tLow\n2026-06-25\t1.27300\t1.26100`}
                 value={rawData}
                 onChange={e => setRawData(e.target.value)}
               />
             </div>
 
-            <Button onClick={handleParse} className="w-full bg-emerald-500 hover:bg-emerald-600 text-black font-bold text-xs">
+            <Button onClick={handleParse} className="w-full text-xs" variant="secondary">
               Parse & Calculate Stats
             </Button>
           </CardContent>
@@ -181,7 +246,7 @@ export default function DashboardPage() {
                     <RangeBarChart dayStats={result.dayStats} avgRange={result.avgRange} />
                   ) : (
                     <div className="h-[220px] flex items-center justify-center text-muted-foreground text-sm">
-                      Generate or parse data to see chart
+                      Fetch or simulate data to see chart
                     </div>
                   )}
                 </TabsContent>
@@ -191,7 +256,7 @@ export default function DashboardPage() {
                     <RangeLineChart rows={result.rows} avgRange={result.avgRange} />
                   ) : (
                     <div className="h-[220px] flex items-center justify-center text-muted-foreground text-sm">
-                      Generate or parse data to see chart
+                      Fetch or simulate data to see chart
                     </div>
                   )}
                 </TabsContent>
