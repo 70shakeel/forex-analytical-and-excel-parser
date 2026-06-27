@@ -25,7 +25,14 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: 'TWELVE_DATA_API_KEY not configured' }, { status: 500 })
   }
 
-  const url = `${BASE}/time_series?symbol=${symbol}&interval=1day&outputsize=${outputsize}&apikey=${apiKey}&format=JSON`
+  // Twelve Data requires slash format for forex pairs: GBP/USD not GBPUSD
+  // Only insert slash for standard 6-char forex symbols without an existing slash
+  const formattedSymbol =
+    !symbol.includes('/') && /^[A-Z]{6}$/.test(symbol)
+      ? `${symbol.slice(0, 3)}/${symbol.slice(3)}`
+      : symbol
+
+  const url = `${BASE}/time_series?symbol=${encodeURIComponent(formattedSymbol)}&interval=1day&outputsize=${outputsize}&apikey=${apiKey}&format=JSON`
 
   const res = await fetch(url, { next: { revalidate: 3600 } })
   if (!res.ok) {
