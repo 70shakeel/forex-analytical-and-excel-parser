@@ -55,7 +55,7 @@ Fill in:
 npm run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000).
+Open [http://localhost:3000](http://localhost:3000) for local dev, or visit the live site at https://forex-analytical-and-excel-parser.vercel.app/
 
 ## Routes
 
