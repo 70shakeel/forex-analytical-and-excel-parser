@@ -9,33 +9,29 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { toast } from 'sonner'
-import { TrendingUp, MailCheck } from 'lucide-react'
+import { TrendingUp, MailCheck, ArrowLeft } from 'lucide-react'
 
-export default function RegisterPage() {
+export default function ForgotPasswordPage() {
   const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
-  const [name, setName] = useState('')
   const [loading, setLoading] = useState(false)
-  const [done, setDone] = useState(false)
+  const [sent, setSent] = useState(false)
 
-  async function handleRegister(e: React.FormEvent) {
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     setLoading(true)
     const supabase = createClient()
-    const { error } = await supabase.auth.signUp({
-      email,
-      password,
-      options: { data: { full_name: name } },
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: `${window.location.origin}/reset-password`,
     })
     if (error) {
       toast.error(error.message)
     } else {
-      setDone(true)
+      setSent(true)
     }
     setLoading(false)
   }
 
-  if (done) {
+  if (sent) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background p-4">
         <div className="w-full max-w-sm text-center space-y-4">
@@ -46,10 +42,10 @@ export default function RegisterPage() {
           </div>
           <h1 className="text-xl font-bold">Check your email</h1>
           <p className="text-muted-foreground text-sm leading-relaxed">
-            We sent a confirmation link to <span className="text-foreground font-medium">{email}</span>.<br />
-            Click it to activate your account.
+            We sent a password reset link to{' '}
+            <span className="text-foreground font-medium">{email}</span>.
           </p>
-          <Link href="/login" className="inline-block text-sm text-emerald-400 hover:underline mt-2">
+          <Link href="/login" className="inline-block text-sm text-emerald-400 hover:underline">
             Back to sign in
           </Link>
         </div>
@@ -67,31 +63,18 @@ export default function RegisterPage() {
             <TrendingUp className="h-7 w-7 text-emerald-400" />
             <span className="text-2xl font-bold">ForexAnalytics</span>
           </div>
-          <p className="text-muted-foreground text-sm">Start analysing your edge for free</p>
         </div>
 
         {/* Card */}
         <div className="rounded-2xl border border-border bg-card p-8 shadow-xl space-y-6">
           <div>
-            <h1 className="text-xl font-bold">Create account</h1>
-            <p className="text-muted-foreground text-sm mt-1">Free forever — no credit card needed</p>
+            <h1 className="text-xl font-bold">Reset password</h1>
+            <p className="text-muted-foreground text-sm mt-1">
+              Enter your email and we&apos;ll send you a reset link.
+            </p>
           </div>
 
-          <form onSubmit={handleRegister} className="space-y-5">
-            <div className="space-y-1.5">
-              <Label htmlFor="name">Full name</Label>
-              <Input
-                id="name"
-                type="text"
-                placeholder="Jane Smith"
-                value={name}
-                onChange={e => setName(e.target.value)}
-                required
-                autoComplete="name"
-                className="h-10"
-              />
-            </div>
-
+          <form onSubmit={handleSubmit} className="space-y-5">
             <div className="space-y-1.5">
               <Label htmlFor="email">Email</Label>
               <Input
@@ -106,36 +89,22 @@ export default function RegisterPage() {
               />
             </div>
 
-            <div className="space-y-1.5">
-              <Label htmlFor="password">Password</Label>
-              <Input
-                id="password"
-                type="password"
-                placeholder="Min 6 characters"
-                value={password}
-                onChange={e => setPassword(e.target.value)}
-                required
-                minLength={6}
-                autoComplete="new-password"
-                className="h-10"
-              />
-            </div>
-
             <Button
               type="submit"
-              className="w-full h-10 bg-emerald-500 hover:bg-emerald-600 text-black font-bold"
+              className="w-full h-10 bg-emerald-500 hover:bg-emerald-600 text-black font-bold cursor-pointer"
               disabled={loading}
             >
-              {loading ? 'Creating account…' : 'Create account'}
+              {loading ? 'Sending…' : 'Send reset link'}
             </Button>
           </form>
 
-          <p className="text-center text-sm text-muted-foreground">
-            Already have an account?{' '}
-            <Link href="/login" className="text-emerald-400 hover:underline font-medium">
-              Sign in
-            </Link>
-          </p>
+          <Link
+            href="/login"
+            className="flex items-center justify-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
+          >
+            <ArrowLeft className="h-3.5 w-3.5" />
+            Back to sign in
+          </Link>
         </div>
       </div>
     </div>

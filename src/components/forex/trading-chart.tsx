@@ -153,8 +153,11 @@ export function TradingChart({ candles, symbol }: Props) {
       })
     }
 
-    // Responsive resize
+    // Responsive resize — guard with removed flag so ResizeObserver
+    // callbacks queued after cleanup don't fire on disposed charts
+    let removed = false
     const ro = new ResizeObserver(() => {
+      if (removed) return
       if (mainRef.current) chart.resize(mainRef.current.clientWidth, 380)
       if (rsiRef.current && rsiChartRef.current) rsiChartRef.current.resize(rsiRef.current.clientWidth, 140)
       if (macdRef.current && macdChartRef.current) macdChartRef.current.resize(macdRef.current.clientWidth, 140)
@@ -162,10 +165,14 @@ export function TradingChart({ candles, symbol }: Props) {
     ro.observe(mainRef.current)
 
     return () => {
+      removed = true
       ro.disconnect()
       chart.remove()
+      chartRef.current = null
       rsiChartRef.current?.remove()
+      rsiChartRef.current = null
       macdChartRef.current?.remove()
+      macdChartRef.current = null
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [candles, activeIndicators])

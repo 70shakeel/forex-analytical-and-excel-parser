@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -14,13 +14,36 @@ import { RangeLineChart } from '@/components/forex/range-line-chart'
 import { TradingChart } from '@/components/forex/trading-chart'
 import { generatePairData, parseAndAnalyze, detectMultiplier, type AnalyticsResult } from '@/lib/forex'
 import type { OhlcBar } from '@/app/api/forex/route'
+import { createClient } from '@/lib/supabase/client'
 import { toast } from 'sonner'
-import { TrendingUp, BarChart2, Copy, Wand2, RefreshCw, Wifi, WifiOff } from 'lucide-react'
+import { TrendingUp, BarChart2, Copy, Wand2, RefreshCw, Wifi, WifiOff, Clock, X } from 'lucide-react'
 
 const MULTIPLIER_OPTIONS = [
   { value: '10000', label: 'Standard (4/5 dec) — GBPUSD, EURUSD' },
   { value: '100', label: 'JPY / Gold (2/3 dec) — USDJPY, XAUUSD' },
   { value: '1', label: 'Crypto / Indices — BTCUSD, US30' },
+]
+
+// All known symbols for the suggestion list
+const ALL_SYMBOLS = [
+  { symbol: 'GBPUSD', label: 'GBP/USD', category: 'Major' },
+  { symbol: 'EURUSD', label: 'EUR/USD', category: 'Major' },
+  { symbol: 'USDJPY', label: 'USD/JPY', category: 'Major' },
+  { symbol: 'AUDUSD', label: 'AUD/USD', category: 'Major' },
+  { symbol: 'USDCAD', label: 'USD/CAD', category: 'Major' },
+  { symbol: 'USDCHF', label: 'USD/CHF', category: 'Major' },
+  { symbol: 'NZDUSD', label: 'NZD/USD', category: 'Major' },
+  { symbol: 'GBPJPY', label: 'GBP/JPY', category: 'Cross' },
+  { symbol: 'EURJPY', label: 'EUR/JPY', category: 'Cross' },
+  { symbol: 'EURGBP', label: 'EUR/GBP', category: 'Cross' },
+  { symbol: 'AUDCAD', label: 'AUD/CAD', category: 'Cross' },
+  { symbol: 'AUDCHF', label: 'AUD/CHF', category: 'Cross' },
+  { symbol: 'CADJPY', label: 'CAD/JPY', category: 'Cross' },
+  { symbol: 'CHFJPY', label: 'CHF/JPY', category: 'Cross' },
+  { symbol: 'XAUUSD', label: 'Gold (XAU/USD)', category: 'Commodity' },
+  { symbol: 'XAGUSD', label: 'Silver (XAG/USD)', category: 'Commodity' },
+  { symbol: 'BTCUSD', label: 'Bitcoin (BTC/USD)', category: 'Crypto' },
+  { symbol: 'ETHUSD', label: 'Ethereum (ETH/USD)', category: 'Crypto' },
 ]
 
 export default function DashboardPage() {
@@ -32,10 +55,79 @@ export default function DashboardPage() {
   const [fetching, setFetching] = useState(false)
   const [dataSource, setDataSource] = useState<'simulated' | 'live' | null>(null)
   const [candles, setCandles] = useState<OhlcBar[]>([])
+  const [showSuggestions, setShowSuggestions] = useState(false)
+  const [recentSearches, setRecentSearches] = useState<string[]>([])
+  const symbolInputRef = useRef<HTMLDivElement>(null)
+
+  // Filtered suggestions based on input
+  const query = symbol.toUpperCase()
+  const suggestions = query.length === 0
+    ? ALL_SYMBOLS
+    : ALL_SYMBOLS.filter(s =>
+        s.symbol.includes(query) || s.label.toUpperCase().includes(query)
+      )
+
+  // Load recent searches from Supabase on mount
+  useEffect(() => {
+    async function loadHistory() {
+      const supabase = createClient()
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return
+      const { data } = await supabase
+        .from('search_history')
+        .select('symbol')
+        .eq('user_id', user.id)
+        .order('searched_at', { ascending: false })
+        .limit(10)
+      if (data) {
+        // Deduplicate while preserving order
+        const seen = new Set<string>()
+        setRecentSearches(data.map(r => r.symbol).filter(s => seen.has(s) ? false : seen.add(s) && true))
+      }
+    }
+    loadHistory()
+  }, [])
+
+  // Close suggestions on outside click
+  useEffect(() => {
+    function handleClick(e: MouseEvent) {
+      if (symbolInputRef.current && !symbolInputRef.current.contains(e.target as Node)) {
+        setShowSuggestions(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClick)
+    return () => document.removeEventListener('mousedown', handleClick)
+  }, [])
+
+  async function saveSearch(sym: string) {
+    const supabase = createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return
+    await supabase.from('search_history').insert({ user_id: user.id, symbol: sym })
+    // Update local recent list
+    setRecentSearches(prev => {
+      const filtered = prev.filter(s => s !== sym)
+      return [sym, ...filtered].slice(0, 10)
+    })
+  }
+
+  async function deleteSearch(sym: string) {
+    const supabase = createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return
+    await supabase.from('search_history').delete().eq('user_id', user.id).eq('symbol', sym)
+    setRecentSearches(prev => prev.filter(s => s !== sym))
+  }
 
   function handleSymbolChange(val: string) {
     setSymbol(val.toUpperCase())
     setMultiplier(detectMultiplier(val).toString())
+  }
+
+  function handlePickSymbol(sym: string) {
+    setSymbol(sym)
+    setMultiplier(detectMultiplier(sym).toString())
+    setShowSuggestions(false)
   }
 
   function handleGenerate() {
@@ -51,28 +143,22 @@ export default function DashboardPage() {
     setGenerating(false)
   }
 
-  async function handleFetchLive() {
-    if (!symbol.trim()) {
-      toast.error('Enter a symbol first')
-      return
-    }
+  async function handleFetchLive(overrideSymbol?: string) {
+    const sym = overrideSymbol ?? symbol
+    if (!sym.trim()) { toast.error('Enter a symbol first'); return }
     setFetching(true)
     try {
-      const res = await fetch(`/api/forex?symbol=${encodeURIComponent(symbol)}&outputsize=65`)
+      const res = await fetch(`/api/forex?symbol=${encodeURIComponent(sym)}&outputsize=120`)
       const json = await res.json()
-
-      if (!res.ok) {
-        toast.error(json.error ?? 'Failed to fetch live data')
-        return
-      }
-
+      if (!res.ok) { toast.error(json.error ?? 'Failed to fetch live data'); return }
       setRawData(json.tsv)
       setCandles(json.candles ?? [])
-      const parsed = parseAndAnalyze(json.tsv, parseFloat(multiplier))
+      const parsed = parseAndAnalyze(json.tsv, parseFloat(detectMultiplier(sym).toString()))
       if (parsed) {
         setResult(parsed)
         setDataSource('live')
-        toast.success(`Loaded ${json.count} days of live data for ${symbol}`)
+        toast.success(`Loaded ${json.count} days of live data for ${sym}`)
+        await saveSearch(sym.toUpperCase())
       }
     } catch {
       toast.error('Network error — check your connection')
@@ -82,15 +168,9 @@ export default function DashboardPage() {
   }
 
   function handleParse() {
-    if (!rawData.trim()) {
-      toast.error('Paste data or fetch/generate first')
-      return
-    }
+    if (!rawData.trim()) { toast.error('Paste data or fetch/generate first'); return }
     const res = parseAndAnalyze(rawData, parseFloat(multiplier))
-    if (!res) {
-      toast.error('Could not parse data — check format (Date High Low)')
-      return
-    }
+    if (!res) { toast.error('Could not parse data — check format (Date High Low)'); return }
     setResult(res)
     toast.success('Statistics calculated')
   }
@@ -99,9 +179,7 @@ export default function DashboardPage() {
     if (!result) return
     const pairName = symbol.toUpperCase()
     let text = `Date\tDay of Week\tHigh (${pairName})\tLow (${pairName})\tRange (Pips)\n`
-    result.rows.forEach(r => {
-      text += `${r.date}\t${r.day}\t${r.high}\t${r.low}\t${r.range}\n`
-    })
+    result.rows.forEach(r => { text += `${r.date}\t${r.day}\t${r.high}\t${r.low}\t${r.range}\n` })
     navigator.clipboard.writeText(text)
     toast.success('Table copied — paste into Excel cell A1')
   }
@@ -148,14 +226,73 @@ export default function DashboardPage() {
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="space-y-2">
+
+            {/* Symbol input with suggestions */}
+            <div className="space-y-2" ref={symbolInputRef}>
               <Label className="text-xs uppercase tracking-wider text-muted-foreground">Symbol</Label>
-              <Input
-                value={symbol}
-                onChange={e => handleSymbolChange(e.target.value)}
-                className="font-mono font-bold text-emerald-400 uppercase tracking-widest"
-                placeholder="GBPUSD"
-              />
+              <div className="relative">
+                <Input
+                  value={symbol}
+                  onChange={e => handleSymbolChange(e.target.value)}
+                  onFocus={() => setShowSuggestions(true)}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter') { setShowSuggestions(false); handleFetchLive() }
+                    if (e.key === 'Escape') setShowSuggestions(false)
+                  }}
+                  className="font-mono font-bold text-emerald-400 uppercase tracking-widest"
+                  placeholder="GBPUSD"
+                  autoComplete="off"
+                />
+
+                {/* Dropdown */}
+                {showSuggestions && (
+                  <div className="absolute top-full left-0 right-0 mt-1 z-50 rounded-xl border border-border bg-card shadow-xl overflow-hidden max-h-72 overflow-y-auto">
+
+                    {/* Recent searches */}
+                    {recentSearches.length > 0 && (
+                      <div>
+                        <div className="px-3 py-2 flex items-center gap-1.5 border-b border-border">
+                          <Clock className="h-3 w-3 text-muted-foreground" />
+                          <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Recent</span>
+                        </div>
+                        {recentSearches.map(s => (
+                          <div key={s} className="flex items-center justify-between hover:bg-muted/40 transition-colors group">
+                            <button
+                              className="flex-1 text-left px-3 py-2 text-sm font-mono font-bold text-emerald-400"
+                              onClick={() => { handlePickSymbol(s); handleFetchLive(s) }}
+                            >
+                              {s}
+                            </button>
+                            <button
+                              className="px-2 py-2 opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-foreground transition-all"
+                              onClick={e => { e.stopPropagation(); deleteSearch(s) }}
+                            >
+                              <X className="h-3 w-3" />
+                            </button>
+                          </div>
+                        ))}
+                        <div className="border-t border-border" />
+                      </div>
+                    )}
+
+                    {/* Symbol suggestions */}
+                    {suggestions.length > 0 ? (
+                      suggestions.map(s => (
+                        <button
+                          key={s.symbol}
+                          className="w-full flex items-center justify-between px-3 py-2 hover:bg-muted/40 transition-colors text-left"
+                          onClick={() => { handlePickSymbol(s.symbol); handleFetchLive(s.symbol) }}
+                        >
+                          <span className="text-sm font-mono font-bold text-foreground">{s.symbol}</span>
+                          <span className="text-xs text-muted-foreground">{s.label}</span>
+                        </button>
+                      ))
+                    ) : (
+                      <p className="px-3 py-3 text-xs text-muted-foreground">No matches — press Enter to search anyway</p>
+                    )}
+                  </div>
+                )}
+              </div>
             </div>
 
             <div className="space-y-2">
@@ -172,9 +309,9 @@ export default function DashboardPage() {
               </Select>
             </div>
 
-            {/* Live fetch — primary action */}
+            {/* Live fetch */}
             <Button
-              onClick={handleFetchLive}
+              onClick={() => handleFetchLive()}
               disabled={fetching}
               className="w-full bg-emerald-500 hover:bg-emerald-600 text-black font-bold text-xs"
             >
@@ -182,13 +319,8 @@ export default function DashboardPage() {
               {fetching ? 'Fetching live data…' : 'Fetch Live Data'}
             </Button>
 
-            {/* Simulated fallback */}
-            <Button
-              onClick={handleGenerate}
-              disabled={generating}
-              className="w-full text-xs"
-              variant="outline"
-            >
+            {/* Simulate fallback */}
+            <Button onClick={handleGenerate} disabled={generating} className="w-full text-xs" variant="outline">
               <Wand2 className="h-3 w-3 mr-1" />
               Simulate 65-Day History
             </Button>
@@ -213,7 +345,6 @@ export default function DashboardPage() {
 
         {/* Stats + charts */}
         <div className="lg:col-span-2 space-y-6">
-          {/* Summary cards */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             {[
               { label: 'Avg Daily Range', value: result ? `${result.avgRange} pips` : '—', color: 'text-emerald-400' },
@@ -230,7 +361,6 @@ export default function DashboardPage() {
             ))}
           </div>
 
-          {/* Charts & table tabs */}
           <Card>
             <CardContent className="pt-4">
               <Tabs defaultValue="chart">
@@ -324,7 +454,6 @@ export default function DashboardPage() {
             </CardContent>
           </Card>
 
-          {/* Excel export */}
           <Card>
             <CardHeader className="pb-2">
               <div className="flex items-center justify-between">
