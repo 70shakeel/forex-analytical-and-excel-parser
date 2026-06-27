@@ -25,7 +25,10 @@ export default function RegisterPage() {
     const { error } = await supabase.auth.signUp({
       email,
       password,
-      options: { data: { full_name: name } },
+      options: {
+        data: { full_name: name },
+        emailRedirectTo: `${process.env.NEXT_PUBLIC_SITE_URL ?? window.location.origin}/login`,
+      },
     })
     if (error) {
       toast.error(error.message)
