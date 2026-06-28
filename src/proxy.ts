@@ -29,9 +29,11 @@ export async function proxy(request: NextRequest) {
     request.nextUrl.pathname.startsWith('/register') ||
     request.nextUrl.pathname.startsWith('/forgot-password') ||
     request.nextUrl.pathname.startsWith('/reset-password')
-  const isDashboard = request.nextUrl.pathname.startsWith('/dashboard')
+  const isProtected = request.nextUrl.pathname.startsWith('/dashboard') ||
+    request.nextUrl.pathname.startsWith('/journal') ||
+    request.nextUrl.pathname.startsWith('/portfolios')
 
-  if (!user && isDashboard) {
+  if (!user && isProtected) {
     return NextResponse.redirect(new URL('/login', request.url))
   }
 

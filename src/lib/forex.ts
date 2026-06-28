@@ -115,14 +115,15 @@ export function parseAndAnalyze(rawText: string, multiplier: number): AnalyticsR
     const low = parseFloat(columns[2])
     if (isNaN(high) || isNaN(low)) continue
 
+    const dayNum = parsedDate.getDay()
+    if (dayNum === 0 || dayNum === 6) continue // skip Saturday & Sunday
+
     const range = Math.round(Math.abs(high - low) * multiplier * 10) / 10
     const daysMap = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
-    const dayName = daysMap[parsedDate.getDay()]
+    const dayName = daysMap[dayNum]
 
-    if (dayOfWeekStats[dayName]) {
-      dayOfWeekStats[dayName].sum += range
-      dayOfWeekStats[dayName].count += 1
-    }
+    dayOfWeekStats[dayName].sum += range
+    dayOfWeekStats[dayName].count += 1
 
     rows.push({ date: columns[0], day: dayName, high, low, range })
     totalRangeSum += range

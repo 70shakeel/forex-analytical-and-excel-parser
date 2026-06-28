@@ -3,7 +3,9 @@
 import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
-import { TrendingUp, LogOut, ChevronDown } from 'lucide-react'
+import Link from 'next/link'
+import { usePathname } from 'next/navigation'
+import { TrendingUp, LogOut, ChevronDown, LayoutDashboard, BookOpen } from 'lucide-react'
 import { toast } from 'sonner'
 
 interface NavbarProps {
@@ -13,6 +15,7 @@ interface NavbarProps {
 
 export function Navbar({ userEmail, userName }: NavbarProps) {
   const router = useRouter()
+  const pathname = usePathname()
   const [open, setOpen] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
 
@@ -43,9 +46,19 @@ export function Navbar({ userEmail, userName }: NavbarProps) {
   return (
     <header className="sticky top-0 z-50 border-b border-border bg-background/80 backdrop-blur">
       <div className="max-w-7xl mx-auto px-4 h-14 flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <TrendingUp className="h-5 w-5 text-emerald-400" />
-          <span className="font-bold text-foreground text-sm">ForexAnalytics</span>
+        <div className="flex items-center gap-4">
+          <div className="flex items-center gap-2">
+            <TrendingUp className="h-5 w-5 text-emerald-400" />
+            <span className="font-bold text-foreground text-sm">ForexAnalytics</span>
+          </div>
+          <nav className="flex items-center gap-1">
+            <Link href="/dashboard" className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${pathname.startsWith('/dashboard') ? 'bg-emerald-500/10 text-emerald-400' : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'}`}>
+              <LayoutDashboard className="h-3.5 w-3.5" />Analytics
+            </Link>
+            <Link href="/journal" className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${pathname.startsWith('/journal') || pathname.startsWith('/portfolios') ? 'bg-emerald-500/10 text-emerald-400' : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'}`}>
+              <BookOpen className="h-3.5 w-3.5" />Journal
+            </Link>
+          </nav>
         </div>
 
         <div className="relative" ref={menuRef}>

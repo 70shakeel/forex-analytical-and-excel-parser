@@ -55,6 +55,7 @@ export default function DashboardPage() {
   const [fetching, setFetching] = useState(false)
   const [dataSource, setDataSource] = useState<'simulated' | 'live' | null>(null)
   const [candles, setCandles] = useState<OhlcBar[]>([])
+  const [days, setDays] = useState(120)
   const [showSuggestions, setShowSuggestions] = useState(false)
   const [recentSearches, setRecentSearches] = useState<string[]>([])
   const symbolInputRef = useRef<HTMLDivElement>(null)
@@ -148,7 +149,7 @@ export default function DashboardPage() {
     if (!sym.trim()) { toast.error('Enter a symbol first'); return }
     setFetching(true)
     try {
-      const res = await fetch(`/api/forex?symbol=${encodeURIComponent(sym)}&outputsize=120`)
+      const res = await fetch(`/api/forex?symbol=${encodeURIComponent(sym)}&outputsize=${days}`)
       const json = await res.json()
       if (!res.ok) { toast.error(json.error ?? 'Failed to fetch live data'); return }
       setRawData(json.tsv)
@@ -307,6 +308,22 @@ export default function DashboardPage() {
                   ))}
                 </SelectContent>
               </Select>
+            </div>
+
+            {/* Days slider */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <Label className="text-xs uppercase tracking-wider text-muted-foreground">Days of History</Label>
+                <span className="text-xs font-mono font-bold text-emerald-400">{days}d</span>
+              </div>
+              <input
+                type="range" min={30} max={365} step={5} value={days}
+                onChange={e => setDays(parseInt(e.target.value))}
+                className="w-full accent-emerald-500 h-1.5 rounded-full"
+              />
+              <div className="flex justify-between text-[10px] text-muted-foreground">
+                <span>30d</span><span>365d</span>
+              </div>
             </div>
 
             {/* Live fetch */}
