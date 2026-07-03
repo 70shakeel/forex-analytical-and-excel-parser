@@ -9,23 +9,32 @@ cloudinary.config({
 })
 
 export async function POST(req: NextRequest) {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  try {
+    if (!process.env.CLOUDINARY_CLOUD_NAME || !process.env.CLOUDINARY_API_KEY || !process.env.CLOUDINARY_API_SECRET) {
+      return NextResponse.json({ error: 'Cloudinary not configured' }, { status: 500 })
+    }
 
-  const form = await req.formData()
-  const file = form.get('file') as File | null
-  if (!file) return NextResponse.json({ error: 'No file' }, { status: 400 })
+    const supabase = await createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const bytes = await file.arrayBuffer()
-  const buffer = Buffer.from(bytes)
+    const form = await req.formData()
+    const file = form.get('file') as File | null
+    if (!file) return NextResponse.json({ error: 'No file' }, { status: 400 })
 
-  const result = await new Promise<{ secure_url: string }>((resolve, reject) => {
-    cloudinary.uploader.upload_stream(
-      { folder: `forex-journal/${user.id}`, resource_type: 'image' },
-      (err, res) => err ? reject(err) : resolve(res as { secure_url: string })
-    ).end(buffer)
-  })
+    const bytes = await file.arrayBuffer()
+    const buffer = Buffer.from(bytes)
 
-  return NextResponse.json({ url: result.secure_url })
+    const result = await new Promise<{ secure_url: string }>((resolve, reject) => {
+      cloudinary.uploader.upload_stream(
+        { folder: `forex-journal/${user.id}`, resource_type: 'image' },
+        (err, res) => err ? reject(err) : resolve(res as { secure_url: string })
+      ).end(buffer)
+    })
+
+    return NextResponse.json({ url: result.secure_url })
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Upload failed'
+    return NextResponse.json({ error: message }, { status: 500 })
+  }
 }
