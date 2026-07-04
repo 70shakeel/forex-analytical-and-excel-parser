@@ -209,7 +209,9 @@ function ActionPopup({ trade, onClose, onSave, onDelete }: ActionPopupProps) {
             <div className="space-y-1.5">
               <Label>Direction</Label>
               <Select value={direction} onValueChange={v => setDirection(v as 'long' | 'short')}>
-                <SelectTrigger className="h-10"><SelectValue /></SelectTrigger>
+                <SelectTrigger className="h-10">
+                  <span>{{ long: 'Long (Buy)', short: 'Short (Sell)' }[direction]}</span>
+                </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="long">Long (Buy)</SelectItem>
                   <SelectItem value="short">Short (Sell)</SelectItem>
@@ -254,7 +256,9 @@ function ActionPopup({ trade, onClose, onSave, onDelete }: ActionPopupProps) {
           <div className="space-y-1.5">
             <Label>Status</Label>
             <Select value={status} onValueChange={v => setStatus(v as 'open' | 'tp_hit' | 'sl_hit')}>
-              <SelectTrigger className="h-10"><SelectValue /></SelectTrigger>
+              <SelectTrigger className="h-10">
+                <span>{{ open: 'Open', tp_hit: 'TP Hit', sl_hit: 'SL Hit' }[status]}</span>
+              </SelectTrigger>
               <SelectContent>
                 <SelectItem value="open">Open</SelectItem>
                 <SelectItem value="tp_hit">TP Hit</SelectItem>
