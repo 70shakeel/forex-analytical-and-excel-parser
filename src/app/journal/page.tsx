@@ -36,8 +36,13 @@ function ActionPopup({ trade, onClose, onSave, onDelete }: ActionPopupProps) {
   const [saving, setSaving] = useState(false)
   const [deleting, setDeleting] = useState(false)
 
-  function calcPnl(status: 'tp_hit' | 'sl_hit', tpVal: number | null, slVal: number | null) {
-    const price = status === 'tp_hit' ? (tpVal ?? trade.entry) : (slVal ?? trade.entry)
+  function calcPnl(status: 'tp_hit' | 'sl_hit') {
+    if (trade.rr !== null) {
+      return status === 'tp_hit' ? trade.rr : -trade.rr
+    }
+    const tpNum = tp ? parseFloat(tp) : null
+    const slNum = sl ? parseFloat(sl) : null
+    const price = status === 'tp_hit' ? (tpNum ?? trade.entry) : (slNum ?? trade.entry)
     return Math.round(trade.order_quantity * (price - trade.entry) * (trade.direction === 'short' ? -1 : 1) * 100) / 100
   }
 
@@ -45,7 +50,7 @@ function ActionPopup({ trade, onClose, onSave, onDelete }: ActionPopupProps) {
     setSaving(true)
     const tpNum = tp ? parseFloat(tp) : null
     const slNum = sl ? parseFloat(sl) : null
-    const pnl = calcPnl(status, tpNum, slNum)
+    const pnl = calcPnl(status)
     const supabase = createClient()
     const { error } = await supabase
       .from('trades')
@@ -80,8 +85,8 @@ function ActionPopup({ trade, onClose, onSave, onDelete }: ActionPopupProps) {
     onClose()
   }
 
-  const tpPnl = tp ? calcPnl('tp_hit', parseFloat(tp), null) : null
-  const slPnl = sl ? calcPnl('sl_hit', null, parseFloat(sl)) : null
+  const tpPnl = trade.rr !== null ? trade.rr : (tp ? calcPnl('tp_hit') : null)
+  const slPnl = trade.rr !== null ? -trade.rr : (sl ? calcPnl('sl_hit') : null)
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={onClose}>
@@ -251,8 +256,11 @@ export default function JournalPage() {
 
   const closedTrades = trades.filter(t => t.status !== 'open')
   const totalPnl = closedTrades.reduce((sum, t) => sum + (t.pnl ?? 0), 0)
-  const equity = activePortfolio ? activePortfolio.initial_equity + totalPnl : 0
+  const initialEquity = activePortfolio?.initial_equity ?? 0
+  const equity = initialEquity + totalPnl
+  const pnlPct = initialEquity > 0 ? (totalPnl / initialEquity) * 100 : 0
   const wins = closedTrades.filter(t => (t.pnl ?? 0) > 0).length
+  const losses = closedTrades.filter(t => (t.pnl ?? 0) < 0).length
   const winRate = closedTrades.length > 0 ? Math.round((wins / closedTrades.length) * 100) : 0
   const canEdit = userRole === 'owner' || userRole === 'editor'
 
@@ -309,19 +317,41 @@ export default function JournalPage() {
 
       {/* Stats */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        {[
-          { label: 'Equity', value: `$${equity.toLocaleString('en', { minimumFractionDigits: 2 })}`, color: 'text-foreground' },
-          { label: 'Total PnL', value: `${totalPnl >= 0 ? '+' : ''}$${totalPnl.toLocaleString('en', { minimumFractionDigits: 2 })}`, color: pnlColor(totalPnl) },
-          { label: 'Win Rate', value: `${winRate}%`, color: winRate >= 50 ? 'text-emerald-400' : 'text-red-400' },
-          { label: 'Trades', value: `${trades.length}`, color: 'text-foreground' },
-        ].map(s => (
-          <Card key={s.label} className="bg-card border-border">
-            <CardContent className="pt-4 pb-3">
-              <p className="text-[10px] uppercase tracking-wider text-muted-foreground">{s.label}</p>
-              <p className={`text-xl font-bold mt-0.5 ${s.color}`}>{s.value}</p>
-            </CardContent>
-          </Card>
-        ))}
+        <Card className="bg-card border-border">
+          <CardContent className="pt-4 pb-3">
+            <p className="text-[10px] uppercase tracking-wider text-muted-foreground">Equity</p>
+            <p className="text-xl font-bold mt-0.5">${equity.toLocaleString('en', { minimumFractionDigits: 2 })}</p>
+          </CardContent>
+        </Card>
+        <Card className="bg-card border-border">
+          <CardContent className="pt-4 pb-3">
+            <p className="text-[10px] uppercase tracking-wider text-muted-foreground">Total PnL</p>
+            <div className="flex items-baseline gap-2 mt-0.5">
+              <p className={`text-xl font-bold ${pnlColor(totalPnl)}`}>
+                {pnlPct >= 0 ? '+' : ''}{pnlPct.toFixed(2)}%
+              </p>
+              <p className={`text-xs font-mono ${pnlColor(totalPnl)}`}>
+                {totalPnl >= 0 ? '+' : ''}${Math.abs(totalPnl).toLocaleString('en', { minimumFractionDigits: 2 })}
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+        <Card className="bg-card border-border">
+          <CardContent className="pt-4 pb-3">
+            <p className="text-[10px] uppercase tracking-wider text-muted-foreground">Win Rate</p>
+            <p className={`text-xl font-bold mt-0.5 ${winRate >= 50 ? 'text-emerald-400' : 'text-red-400'}`}>{winRate}%</p>
+            <p className="text-[10px] text-muted-foreground mt-0.5">
+              <span className="text-emerald-400">{wins}W</span> · <span className="text-red-400">{losses}L</span>
+            </p>
+          </CardContent>
+        </Card>
+        <Card className="bg-card border-border">
+          <CardContent className="pt-4 pb-3">
+            <p className="text-[10px] uppercase tracking-wider text-muted-foreground">Trades</p>
+            <p className="text-xl font-bold mt-0.5">{trades.length}</p>
+            <p className="text-[10px] text-muted-foreground mt-0.5">{closedTrades.length} closed</p>
+          </CardContent>
+        </Card>
       </div>
 
       {/* Trade list */}
@@ -344,6 +374,7 @@ export default function JournalPage() {
                     <th className="text-right pb-2 pr-4 text-emerald-400">TP</th>
                     <th className="text-right pb-2 pr-4 text-red-400">SL</th>
                     <th className="text-right pb-2 pr-4">Qty</th>
+                    <th className="text-right pb-2 pr-4 text-yellow-400">RR</th>
                     <th className="text-right pb-2 pr-4">PnL</th>
                     <th className="text-left pb-2 pr-4">Status</th>
                     <th className="text-left pb-2">Chart</th>
@@ -351,7 +382,9 @@ export default function JournalPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border">
-                  {trades.map(t => (
+                  {trades.map(t => {
+                    const tradePnlPct = t.pnl !== null && initialEquity > 0 ? (t.pnl / initialEquity) * 100 : null
+                    return (
                     <tr key={t.id} className="hover:bg-muted/20 transition-colors">
                       <td className="py-2.5 pr-4 text-muted-foreground whitespace-nowrap">{new Date(t.traded_at).toLocaleDateString()}</td>
                       <td className="py-2.5 pr-4 font-mono font-bold text-emerald-400">{t.symbol}</td>
@@ -364,8 +397,16 @@ export default function JournalPage() {
                       <td className="py-2.5 pr-4 text-right font-mono text-emerald-400">{t.tp ?? '—'}</td>
                       <td className="py-2.5 pr-4 text-right font-mono text-red-400">{t.sl ?? '—'}</td>
                       <td className="py-2.5 pr-4 text-right font-mono">{t.order_quantity}</td>
+                      <td className="py-2.5 pr-4 text-right font-mono text-yellow-400">{t.rr !== null ? `$${t.rr}` : '—'}</td>
                       <td className={`py-2.5 pr-4 text-right font-mono font-bold ${pnlColor(t.pnl)}`}>
-                        {t.pnl !== null ? `${t.pnl >= 0 ? '+' : ''}${t.pnl.toFixed(2)}` : '—'}
+                        {tradePnlPct !== null ? (
+                          <span className="flex flex-col items-end">
+                            <span>{tradePnlPct >= 0 ? '+' : ''}{tradePnlPct.toFixed(2)}%</span>
+                            <span className="text-[10px] font-normal opacity-70">
+                              {t.pnl! >= 0 ? '+' : ''}${Math.abs(t.pnl!).toFixed(2)}
+                            </span>
+                          </span>
+                        ) : '—'}
                       </td>
                       <td className="py-2.5 pr-4">{statusBadge(t.status)}</td>
                       <td className="py-2.5 pr-4">
@@ -384,7 +425,7 @@ export default function JournalPage() {
                         </td>
                       )}
                     </tr>
-                  ))}
+                  )})}
                 </tbody>
               </table>
             </div>

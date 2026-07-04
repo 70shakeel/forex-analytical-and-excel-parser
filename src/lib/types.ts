@@ -25,6 +25,7 @@ export interface Trade {
   tp: number | null
   sl: number | null
   order_quantity: number
+  rr: number | null
   pnl: number | null
   status: 'open' | 'tp_hit' | 'sl_hit'
   chart_url: string | null
