@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 import Link from 'next/link'
 import { useSearchParams, useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
@@ -8,8 +8,10 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { toast } from 'sonner'
-import { Plus, TrendingUp, TrendingDown, BookOpen, Settings, X, MoreHorizontal } from 'lucide-react'
+import { Plus, TrendingUp, TrendingDown, BookOpen, Settings, X, Pencil, Upload } from 'lucide-react'
 import type { Portfolio, Trade } from '@/lib/types'
 
 function pnlColor(v: number | null) {
@@ -30,48 +32,122 @@ interface ActionPopupProps {
   onDelete: (id: string) => void
 }
 
+const ALL_SYMBOLS = [
+  { symbol: 'GBPUSD', label: 'GBP/USD' },
+  { symbol: 'EURUSD', label: 'EUR/USD' },
+  { symbol: 'USDJPY', label: 'USD/JPY' },
+  { symbol: 'AUDUSD', label: 'AUD/USD' },
+  { symbol: 'USDCAD', label: 'USD/CAD' },
+  { symbol: 'USDCHF', label: 'USD/CHF' },
+  { symbol: 'NZDUSD', label: 'NZD/USD' },
+  { symbol: 'GBPJPY', label: 'GBP/JPY' },
+  { symbol: 'EURJPY', label: 'EUR/JPY' },
+  { symbol: 'EURGBP', label: 'EUR/GBP' },
+  { symbol: 'AUDCAD', label: 'AUD/CAD' },
+  { symbol: 'AUDCHF', label: 'AUD/CHF' },
+  { symbol: 'CADJPY', label: 'CAD/JPY' },
+  { symbol: 'CHFJPY', label: 'CHF/JPY' },
+  { symbol: 'XAUUSD', label: 'Gold (XAU/USD)' },
+  { symbol: 'XAGUSD', label: 'Silver (XAG/USD)' },
+  { symbol: 'BTCUSD', label: 'Bitcoin (BTC/USD)' },
+  { symbol: 'ETHUSD', label: 'Ethereum (ETH/USD)' },
+]
+
 function ActionPopup({ trade, onClose, onSave, onDelete }: ActionPopupProps) {
+  const [symbol, setSymbol] = useState(trade.symbol)
+  const [direction, setDirection] = useState<'long' | 'short'>(trade.direction)
+  const [entry, setEntry] = useState(trade.entry.toString())
   const [tp, setTp] = useState(trade.tp?.toString() ?? '')
   const [sl, setSl] = useState(trade.sl?.toString() ?? '')
+  const [qty, setQty] = useState(trade.order_quantity.toString())
+  const [rr, setRr] = useState(trade.rr?.toString() ?? '')
+  const [status, setStatus] = useState<'open' | 'tp_hit' | 'sl_hit'>(trade.status)
+  const [notes, setNotes] = useState(trade.notes ?? '')
+  const [tradedAt, setTradedAt] = useState(() => new Date(trade.traded_at).toISOString().slice(0, 16))
+  const [chartFile, setChartFile] = useState<File | null>(null)
+  const [chartPreview, setChartPreview] = useState<string | null>(trade.chart_url)
+  const [showSuggestions, setShowSuggestions] = useState(false)
   const [saving, setSaving] = useState(false)
   const [deleting, setDeleting] = useState(false)
+  const symbolWrapRef = useRef<HTMLDivElement>(null)
+  const fileRef = useRef<HTMLInputElement>(null)
 
-  function calcPnl(status: 'tp_hit' | 'sl_hit') {
-    if (trade.rr !== null) {
-      return status === 'tp_hit' ? trade.rr : -trade.rr
+  const query = symbol.toUpperCase()
+  const suggestions = query.length === 0
+    ? ALL_SYMBOLS
+    : ALL_SYMBOLS.filter(s => s.symbol.includes(query) || s.label.toUpperCase().includes(query))
+
+  useEffect(() => {
+    function handleClick(e: MouseEvent) {
+      if (symbolWrapRef.current && !symbolWrapRef.current.contains(e.target as Node))
+        setShowSuggestions(false)
     }
-    const tpNum = tp ? parseFloat(tp) : null
-    const slNum = sl ? parseFloat(sl) : null
-    const price = status === 'tp_hit' ? (tpNum ?? trade.entry) : (slNum ?? trade.entry)
-    return Math.round(trade.order_quantity * (price - trade.entry) * (trade.direction === 'short' ? -1 : 1) * 100) / 100
+    document.addEventListener('mousedown', handleClick)
+    return () => document.removeEventListener('mousedown', handleClick)
+  }, [])
+
+  function handleFile(file: File) {
+    setChartFile(file)
+    setChartPreview(URL.createObjectURL(file))
   }
 
-  async function handleMark(status: 'tp_hit' | 'sl_hit') {
-    setSaving(true)
+  function calcPnl(outcome: 'tp_hit' | 'sl_hit') {
+    const rrNum = rr ? parseFloat(rr) : null
+    if (rrNum !== null) return outcome === 'tp_hit' ? rrNum : -rrNum
     const tpNum = tp ? parseFloat(tp) : null
     const slNum = sl ? parseFloat(sl) : null
-    const pnl = calcPnl(status)
-    const supabase = createClient()
-    const { error } = await supabase
-      .from('trades')
-      .update({ status, pnl, tp: tpNum, sl: slNum })
-      .eq('id', trade.id)
-    if (error) { toast.error(error.message); setSaving(false); return }
-    onSave({ ...trade, status, pnl, tp: tpNum, sl: slNum })
-    toast.success(status === 'tp_hit' ? 'TP hit marked' : 'SL hit marked')
-    onClose()
+    const entryNum = parseFloat(entry) || trade.entry
+    const qtyNum = parseFloat(qty) || trade.order_quantity
+    const price = outcome === 'tp_hit' ? (tpNum ?? entryNum) : (slNum ?? entryNum)
+    return Math.round(qtyNum * (price - entryNum) * (direction === 'short' ? -1 : 1) * 100) / 100
   }
 
-  async function handleSavePrices() {
+  async function handleSave(e: React.FormEvent) {
+    e.preventDefault()
     setSaving(true)
+
+    let chartUrl = trade.chart_url
+    if (chartFile) {
+      const form = new FormData()
+      form.append('file', chartFile)
+      const res = await fetch('/api/upload', { method: 'POST', body: form })
+      const json = await res.json()
+      if (!res.ok) { toast.error(json.error ?? 'Upload failed'); setSaving(false); return }
+      chartUrl = json.url
+    }
+
     const tpNum = tp ? parseFloat(tp) : null
     const slNum = sl ? parseFloat(sl) : null
+    const rrNum = rr ? parseFloat(rr) : null
+    const entryNum = parseFloat(entry)
+    const qtyNum = parseFloat(qty)
+
+    let pnl = trade.pnl
+    if (status !== 'open') {
+      pnl = calcPnl(status as 'tp_hit' | 'sl_hit')
+    } else {
+      pnl = null
+    }
+
     const supabase = createClient()
-    const { error } = await supabase
-      .from('trades').update({ tp: tpNum, sl: slNum }).eq('id', trade.id)
+    const { error } = await supabase.from('trades').update({
+      symbol: symbol.toUpperCase(),
+      direction,
+      entry: entryNum,
+      tp: tpNum,
+      sl: slNum,
+      order_quantity: qtyNum,
+      rr: rrNum,
+      status,
+      pnl,
+      notes: notes || null,
+      traded_at: new Date(tradedAt).toISOString(),
+      chart_url: chartUrl,
+    }).eq('id', trade.id)
+
     if (error) { toast.error(error.message); setSaving(false); return }
-    onSave({ ...trade, tp: tpNum, sl: slNum })
-    toast.success('Prices updated')
+    onSave({ ...trade, symbol: symbol.toUpperCase(), direction, entry: entryNum, tp: tpNum, sl: slNum, order_quantity: qtyNum, rr: rrNum, status, pnl, notes: notes || null, traded_at: new Date(tradedAt).toISOString(), chart_url: chartUrl })
+    toast.success('Trade updated')
     onClose()
   }
 
@@ -85,107 +161,161 @@ function ActionPopup({ trade, onClose, onSave, onDelete }: ActionPopupProps) {
     onClose()
   }
 
-  const tpPnl = trade.rr !== null ? trade.rr : (tp ? calcPnl('tp_hit') : null)
-  const slPnl = trade.rr !== null ? -trade.rr : (sl ? calcPnl('sl_hit') : null)
-
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={onClose}>
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
       <div
-        className="relative w-full max-w-sm rounded-2xl border border-border bg-card shadow-2xl p-6 space-y-5"
+        className="relative w-full max-w-lg rounded-2xl border border-border bg-card shadow-2xl overflow-y-auto max-h-[95vh]"
         onClick={e => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="flex items-center justify-between">
-          <div>
-            <div className="flex items-center gap-2">
-              <span className="font-mono font-bold text-emerald-400 text-lg">{trade.symbol}</span>
-              {trade.direction === 'long'
-                ? <TrendingUp className="h-4 w-4 text-emerald-400" />
-                : <TrendingDown className="h-4 w-4 text-red-400" />}
-              {statusBadge(trade.status)}
-            </div>
-            <p className="text-xs text-muted-foreground mt-0.5">Entry: <span className="font-mono text-foreground">{trade.entry}</span> · Qty: <span className="font-mono text-foreground">{trade.order_quantity}</span></p>
-          </div>
+        <div className="flex items-center justify-between px-6 pt-5 pb-4 border-b border-border">
+          <h2 className="font-bold text-base">Edit Trade</h2>
           <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-muted/50 text-muted-foreground transition-colors">
             <X className="h-4 w-4" />
           </button>
         </div>
 
-        {/* Price editors */}
-        <div className="space-y-3">
-          <p className="text-xs text-muted-foreground font-semibold uppercase tracking-wider">Edit TP / SL</p>
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1.5">
-              <label className="text-xs font-semibold text-emerald-400 uppercase tracking-wider">Take Profit</label>
-              <Input
-                value={tp} onChange={e => setTp(e.target.value)}
-                type="number" step="any" placeholder="—"
-                className="h-9 font-mono text-emerald-400 border-emerald-500/30 focus:border-emerald-500"
-              />
-              {tpPnl !== null && (
-                <p className={`text-[11px] font-mono ${tpPnl >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                  {tpPnl >= 0 ? '+' : ''}{tpPnl.toFixed(2)}
-                </p>
-              )}
+        <form onSubmit={handleSave} className="p-6 space-y-5">
+          {/* Symbol + Direction */}
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-1.5" ref={symbolWrapRef}>
+              <Label>Symbol</Label>
+              <div className="relative">
+                <Input
+                  value={symbol}
+                  onChange={e => setSymbol(e.target.value.toUpperCase())}
+                  onFocus={() => setShowSuggestions(true)}
+                  onKeyDown={e => { if (e.key === 'Escape') setShowSuggestions(false) }}
+                  placeholder="GBPUSD" required autoComplete="off"
+                  className="font-mono font-bold text-emerald-400 uppercase tracking-widest h-10"
+                />
+                {showSuggestions && suggestions.length > 0 && (
+                  <div className="absolute top-full left-0 right-0 mt-1 z-50 rounded-xl border border-border bg-card shadow-xl overflow-hidden max-h-48 overflow-y-auto">
+                    {suggestions.map(s => (
+                      <button
+                        key={s.symbol} type="button"
+                        className="w-full flex items-center justify-between px-3 py-2 hover:bg-muted/40 transition-colors text-left"
+                        onMouseDown={e => { e.preventDefault(); setSymbol(s.symbol); setShowSuggestions(false) }}
+                      >
+                        <span className="text-sm font-mono font-bold">{s.symbol}</span>
+                        <span className="text-xs text-muted-foreground">{s.label}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
             <div className="space-y-1.5">
-              <label className="text-xs font-semibold text-red-400 uppercase tracking-wider">Stop Loss</label>
-              <Input
-                value={sl} onChange={e => setSl(e.target.value)}
-                type="number" step="any" placeholder="—"
-                className="h-9 font-mono text-red-400 border-red-500/30 focus:border-red-500"
-              />
-              {slPnl !== null && (
-                <p className={`text-[11px] font-mono ${slPnl >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                  {slPnl >= 0 ? '+' : ''}{slPnl.toFixed(2)}
-                </p>
-              )}
+              <Label>Direction</Label>
+              <Select value={direction} onValueChange={v => setDirection(v as 'long' | 'short')}>
+                <SelectTrigger className="h-10"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="long">Long (Buy)</SelectItem>
+                  <SelectItem value="short">Short (Sell)</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
           </div>
 
-          <Button onClick={handleSavePrices} disabled={saving} variant="outline" size="sm" className="w-full text-xs">
-            Save Prices
-          </Button>
-        </div>
-
-        {/* Mark outcome — only for open trades */}
-        {trade.status === 'open' && (
-          <div className="space-y-2 pt-1 border-t border-border">
-            <p className="text-xs text-muted-foreground font-semibold uppercase tracking-wider">Mark Outcome</p>
-            <div className="grid grid-cols-2 gap-2">
-              <Button
-                onClick={() => handleMark('tp_hit')}
-                disabled={saving}
-                className="bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-xs font-bold"
-                variant="outline"
-              >
-                ✓ TP Hit
-              </Button>
-              <Button
-                onClick={() => handleMark('sl_hit')}
-                disabled={saving}
-                className="bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/30 text-xs font-bold"
-                variant="outline"
-              >
-                ✕ SL Hit
-              </Button>
+          {/* Entry / TP / SL */}
+          <div className="grid grid-cols-3 gap-4">
+            <div className="space-y-1.5">
+              <Label>Entry</Label>
+              <Input value={entry} onChange={e => setEntry(e.target.value)} placeholder="1.2345" required type="number" step="any" className="h-10 font-mono" />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Take Profit</Label>
+              <Input value={tp} onChange={e => setTp(e.target.value)} placeholder="1.2500" type="number" step="any" className="h-10 font-mono text-emerald-400" />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Stop Loss</Label>
+              <Input value={sl} onChange={e => setSl(e.target.value)} placeholder="1.2200" type="number" step="any" className="h-10 font-mono text-red-400" />
             </div>
           </div>
-        )}
 
-        {/* Delete */}
-        <div className="pt-1 border-t border-border">
-          <Button
-            onClick={handleDelete}
-            disabled={deleting}
-            variant="outline"
-            size="sm"
-            className="w-full text-xs text-red-400 border-red-500/20 hover:bg-red-500/10 hover:text-red-400"
-          >
-            {deleting ? 'Deleting…' : 'Delete Trade'}
-          </Button>
-        </div>
+          {/* Qty / RR / Date */}
+          <div className="grid grid-cols-3 gap-4">
+            <div className="space-y-1.5">
+              <Label>Quantity (lots)</Label>
+              <Input value={qty} onChange={e => setQty(e.target.value)} placeholder="0.1" required type="number" step="any" min="0" className="h-10 font-mono" />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Risk / Reward ($)</Label>
+              <Input value={rr} onChange={e => setRr(e.target.value)} placeholder="500" type="number" step="any" min="0" className="h-10 font-mono text-yellow-400" />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Date &amp; Time</Label>
+              <Input value={tradedAt} onChange={e => setTradedAt(e.target.value)} type="datetime-local" required className="h-10" />
+            </div>
+          </div>
+
+          {/* Status */}
+          <div className="space-y-1.5">
+            <Label>Status</Label>
+            <Select value={status} onValueChange={v => setStatus(v as 'open' | 'tp_hit' | 'sl_hit')}>
+              <SelectTrigger className="h-10"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="open">Open</SelectItem>
+                <SelectItem value="tp_hit">TP Hit</SelectItem>
+                <SelectItem value="sl_hit">SL Hit</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          {/* Notes */}
+          <div className="space-y-1.5">
+            <Label>Notes</Label>
+            <textarea
+              value={notes} onChange={e => setNotes(e.target.value)}
+              placeholder="Setup, confluences, thoughts…"
+              rows={3}
+              className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring resize-none"
+            />
+          </div>
+
+          {/* Chart */}
+          <div className="space-y-1.5">
+            <Label>Chart Screenshot</Label>
+            {chartPreview ? (
+              <div className="relative rounded-xl overflow-hidden border border-border">
+                <img src={chartPreview} alt="chart" className="w-full object-cover max-h-48" />
+                <button type="button" onClick={() => { setChartFile(null); setChartPreview(null) }}
+                  className="absolute top-2 right-2 p-1 rounded-full bg-background/80 hover:bg-background border border-border text-muted-foreground hover:text-foreground transition-colors">
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+            ) : (
+              <div
+                onClick={() => fileRef.current?.click()}
+                onDragOver={e => e.preventDefault()}
+                onDrop={e => { e.preventDefault(); const f = e.dataTransfer.files[0]; if (f) handleFile(f) }}
+                className="border-2 border-dashed border-border rounded-xl p-6 text-center cursor-pointer hover:border-emerald-500/50 transition-colors"
+              >
+                <Upload className="h-5 w-5 mx-auto mb-1.5 text-muted-foreground" />
+                <p className="text-sm text-muted-foreground">Drag & drop or click to upload</p>
+              </div>
+            )}
+            <input ref={fileRef} type="file" accept="image/*" className="hidden"
+              onChange={e => { const f = e.target.files?.[0]; if (f) handleFile(f) }} />
+          </div>
+
+          {/* Actions */}
+          <div className="flex gap-2 pt-1">
+            <Button type="submit" disabled={saving} className="flex-1 h-10 bg-emerald-500 hover:bg-emerald-600 text-black font-bold">
+              {saving ? 'Saving…' : 'Save Changes'}
+            </Button>
+            <Button
+              type="button"
+              onClick={handleDelete}
+              disabled={deleting}
+              variant="outline"
+              className="h-10 px-4 text-red-400 border-red-500/20 hover:bg-red-500/10 hover:text-red-400"
+            >
+              {deleting ? '…' : 'Delete'}
+            </Button>
+          </div>
+        </form>
       </div>
     </div>
   )
@@ -420,7 +550,7 @@ export default function JournalPage() {
                             onClick={() => setActionTrade(t)}
                             className="p-1.5 rounded-lg hover:bg-muted/50 text-muted-foreground hover:text-foreground transition-colors"
                           >
-                            <MoreHorizontal className="h-4 w-4" />
+                            <Pencil className="h-3.5 w-3.5" />
                           </button>
                         </td>
                       )}
