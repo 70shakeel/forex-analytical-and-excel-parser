@@ -61,7 +61,7 @@ function ActionPopup({ trade, onClose, onSave, onDelete }: ActionPopupProps) {
   const [sl, setSl] = useState(trade.sl?.toString() ?? '')
   const [qty, setQty] = useState(trade.order_quantity.toString())
   const [rr, setRr] = useState(trade.rr?.toString() ?? '')
-  const [status, setStatus] = useState<'open' | 'tp_hit' | 'sl_hit'>(trade.status)
+  const status = trade.status
   const [notes, setNotes] = useState(trade.notes ?? '')
   const [tradedAt, setTradedAt] = useState(() => new Date(trade.traded_at).toISOString().slice(0, 16))
   const [chartFile, setChartFile] = useState<File | null>(null)
@@ -252,21 +252,6 @@ function ActionPopup({ trade, onClose, onSave, onDelete }: ActionPopupProps) {
             </div>
           </div>
 
-          {/* Status */}
-          <div className="space-y-1.5">
-            <Label>Status</Label>
-            <Select value={status} onValueChange={v => setStatus(v as 'open' | 'tp_hit' | 'sl_hit')}>
-              <SelectTrigger className="h-10">
-                <span>{{ open: 'Open', tp_hit: 'TP Hit', sl_hit: 'SL Hit' }[status]}</span>
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="open">Open</SelectItem>
-                <SelectItem value="tp_hit">TP Hit</SelectItem>
-                <SelectItem value="sl_hit">SL Hit</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-
           {/* Notes */}
           <div className="space-y-1.5">
             <Label>Notes</Label>
@@ -333,6 +318,7 @@ export default function JournalPage() {
   const [userRole, setUserRole] = useState<string>('viewer')
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null)
   const [actionTrade, setActionTrade] = useState<Trade | null>(null)
+  const [statusTrade, setStatusTrade] = useState<Trade | null>(null)
   const searchParams = useSearchParams()
   const router = useRouter()
   const portfolioId = searchParams.get('portfolio')
@@ -386,6 +372,24 @@ export default function JournalPage() {
       .from('portfolio_members').select('role')
       .eq('portfolio_id', p.id).eq('user_id', user!.id).single()
     setUserRole(mem?.role ?? 'viewer')
+  }
+
+  async function handleQuickStatus(trade: Trade, newStatus: 'open' | 'tp_hit' | 'sl_hit') {
+    let pnl: number | null = null
+    if (newStatus !== 'open') {
+      if (trade.rr != null) {
+        pnl = newStatus === 'tp_hit' ? trade.rr : -trade.rr
+      } else {
+        const price = newStatus === 'tp_hit' ? (trade.tp ?? trade.entry) : (trade.sl ?? trade.entry)
+        pnl = Math.round(trade.order_quantity * (price - trade.entry) * (trade.direction === 'short' ? -1 : 1) * 100) / 100
+      }
+    }
+    const supabase = createClient()
+    const { error } = await supabase.from('trades').update({ status: newStatus, pnl }).eq('id', trade.id)
+    if (error) { toast.error(error.message); return }
+    setTrades(prev => prev.map(t => t.id === trade.id ? { ...t, status: newStatus, pnl } : t))
+    setStatusTrade(null)
+    toast.success('Status updated')
   }
 
   const closedTrades = trades.filter(t => t.status !== 'open')
@@ -542,7 +546,11 @@ export default function JournalPage() {
                           </span>
                         ) : '—'}
                       </td>
-                      <td className="py-2.5 pr-4">{statusBadge(t.status)}</td>
+                      <td className="py-2.5 pr-4">
+                        {canEdit
+                          ? <button onClick={() => setStatusTrade(t)} className="cursor-pointer hover:opacity-80 transition-opacity">{statusBadge(t.status)}</button>
+                          : statusBadge(t.status)}
+                      </td>
                       <td className="py-2.5 pr-4">
                         {t.chart_url
                           ? <button onClick={() => setLightboxUrl(t.chart_url)} className="text-xs text-emerald-400 hover:underline">View</button>
@@ -575,6 +583,41 @@ export default function JournalPage() {
           onSave={updated => setTrades(prev => prev.map(t => t.id === updated.id ? updated : t))}
           onDelete={id => setTrades(prev => prev.filter(t => t.id !== id))}
         />
+      )}
+
+      {/* Quick status popup */}
+      {statusTrade && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={() => setStatusTrade(null)}>
+          <div className="bg-card border border-border rounded-xl p-5 shadow-xl w-64" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4">
+              <p className="text-sm font-semibold">Update Status</p>
+              <button onClick={() => setStatusTrade(null)} className="text-muted-foreground hover:text-foreground"><X className="h-4 w-4" /></button>
+            </div>
+            <div className="flex flex-col gap-2">
+              <button
+                onClick={() => handleQuickStatus(statusTrade, 'tp_hit')}
+                className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${statusTrade.status === 'tp_hit' ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40' : 'hover:bg-muted/50 text-muted-foreground hover:text-foreground'}`}
+              >
+                <span className="h-2 w-2 rounded-full bg-emerald-500" />
+                TP Hit
+              </button>
+              <button
+                onClick={() => handleQuickStatus(statusTrade, 'sl_hit')}
+                className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${statusTrade.status === 'sl_hit' ? 'bg-red-500/20 text-red-400 border border-red-500/40' : 'hover:bg-muted/50 text-muted-foreground hover:text-foreground'}`}
+              >
+                <span className="h-2 w-2 rounded-full bg-red-500" />
+                SL Hit
+              </button>
+              <button
+                onClick={() => handleQuickStatus(statusTrade, 'open')}
+                className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${statusTrade.status === 'open' ? 'bg-blue-500/20 text-blue-400 border border-blue-500/40' : 'hover:bg-muted/50 text-muted-foreground hover:text-foreground'}`}
+              >
+                <span className="h-2 w-2 rounded-full bg-blue-500" />
+                Open
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Lightbox */}
