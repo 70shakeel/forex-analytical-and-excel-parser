@@ -129,7 +129,7 @@ export default function NewTradePage() {
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-start justify-center bg-black/60 backdrop-blur-sm overflow-y-auto py-8 px-4"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm overflow-y-auto py-8 px-4"
       onClick={() => router.push(backUrl)}
     >
       <div className="w-full max-w-2xl" onClick={e => e.stopPropagation()}>
