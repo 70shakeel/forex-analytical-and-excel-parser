@@ -11,7 +11,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { toast } from 'sonner'
-import { Plus, TrendingUp, TrendingDown, BookOpen, Settings, X, Pencil, Upload } from 'lucide-react'
+import { Plus, TrendingUp, TrendingDown, BookOpen, Settings, X, Pencil, Trash2, Upload } from 'lucide-react'
 import type { Portfolio, Trade } from '@/lib/types'
 
 function pnlColor(v: number | null) {
@@ -60,7 +60,7 @@ function ActionPopup({ trade, onClose, onSave, onDelete }: ActionPopupProps) {
   const [tp, setTp] = useState(trade.tp?.toString() ?? '')
   const [sl, setSl] = useState(trade.sl?.toString() ?? '')
   const [qty, setQty] = useState(trade.order_quantity.toString())
-  const [rr, setRr] = useState(trade.rr?.toString() ?? '')
+
   const status = trade.status
   const [notes, setNotes] = useState(trade.notes ?? '')
   const [tradedAt, setTradedAt] = useState(() => new Date(trade.traded_at).toISOString().slice(0, 16))
@@ -92,8 +92,6 @@ function ActionPopup({ trade, onClose, onSave, onDelete }: ActionPopupProps) {
   }
 
   function calcPnl(outcome: 'tp_hit' | 'sl_hit') {
-    const rrNum = rr ? parseFloat(rr) : null
-    if (rrNum !== null) return outcome === 'tp_hit' ? rrNum : -rrNum
     const tpNum = tp ? parseFloat(tp) : null
     const slNum = sl ? parseFloat(sl) : null
     const entryNum = parseFloat(entry) || trade.entry
@@ -118,7 +116,6 @@ function ActionPopup({ trade, onClose, onSave, onDelete }: ActionPopupProps) {
 
     const tpNum = tp ? parseFloat(tp) : null
     const slNum = sl ? parseFloat(sl) : null
-    const rrNum = rr ? parseFloat(rr) : null
     const entryNum = parseFloat(entry)
     const qtyNum = parseFloat(qty)
 
@@ -137,7 +134,6 @@ function ActionPopup({ trade, onClose, onSave, onDelete }: ActionPopupProps) {
       tp: tpNum,
       sl: slNum,
       order_quantity: qtyNum,
-      rr: rrNum,
       status,
       pnl,
       notes: notes || null,
@@ -146,7 +142,7 @@ function ActionPopup({ trade, onClose, onSave, onDelete }: ActionPopupProps) {
     }).eq('id', trade.id)
 
     if (error) { toast.error(error.message); setSaving(false); return }
-    onSave({ ...trade, symbol: symbol.toUpperCase(), direction, entry: entryNum, tp: tpNum, sl: slNum, order_quantity: qtyNum, rr: rrNum, status, pnl, notes: notes || null, traded_at: new Date(tradedAt).toISOString(), chart_url: chartUrl })
+    onSave({ ...trade, symbol: symbol.toUpperCase(), direction, entry: entryNum, tp: tpNum, sl: slNum, order_quantity: qtyNum, status, pnl, notes: notes || null, traded_at: new Date(tradedAt).toISOString(), chart_url: chartUrl })
     toast.success('Trade updated')
     onClose()
   }
@@ -236,15 +232,11 @@ function ActionPopup({ trade, onClose, onSave, onDelete }: ActionPopupProps) {
             </div>
           </div>
 
-          {/* Qty / RR / Date */}
-          <div className="grid grid-cols-3 gap-4">
+          {/* Qty / Date */}
+          <div className="grid grid-cols-2 gap-4">
             <div className="space-y-1.5">
               <Label>Quantity (lots)</Label>
               <Input value={qty} onChange={e => setQty(e.target.value)} placeholder="0.1" required type="number" step="any" min="0" className="h-10 font-mono" />
-            </div>
-            <div className="space-y-1.5">
-              <Label>Risk / Reward ($)</Label>
-              <Input value={rr} onChange={e => setRr(e.target.value)} placeholder="500" type="number" step="any" min="0" className="h-10 font-mono text-yellow-400" />
             </div>
             <div className="space-y-1.5">
               <Label>Date &amp; Time</Label>
@@ -374,15 +366,20 @@ export default function JournalPage() {
     setUserRole(mem?.role ?? 'viewer')
   }
 
+  async function handleDeleteTrade(id: string) {
+    if (!confirm('Delete this trade?')) return
+    const supabase = createClient()
+    const { error } = await supabase.from('trades').delete().eq('id', id)
+    if (error) { toast.error(error.message); return }
+    setTrades(prev => prev.filter(t => t.id !== id))
+    toast.success('Trade deleted')
+  }
+
   async function handleQuickStatus(trade: Trade, newStatus: 'open' | 'tp_hit' | 'sl_hit') {
     let pnl: number | null = null
     if (newStatus !== 'open') {
-      if (trade.rr != null) {
-        pnl = newStatus === 'tp_hit' ? trade.rr : -trade.rr
-      } else {
-        const price = newStatus === 'tp_hit' ? (trade.tp ?? trade.entry) : (trade.sl ?? trade.entry)
-        pnl = Math.round(trade.order_quantity * (price - trade.entry) * (trade.direction === 'short' ? -1 : 1) * 100) / 100
-      }
+      const price = newStatus === 'tp_hit' ? (trade.tp ?? trade.entry) : (trade.sl ?? trade.entry)
+      pnl = Math.round(trade.order_quantity * (price - trade.entry) * (trade.direction === 'short' ? -1 : 1) * 100) / 100
     }
     const supabase = createClient()
     const { error } = await supabase.from('trades').update({ status: newStatus, pnl }).eq('id', trade.id)
@@ -512,7 +509,7 @@ export default function JournalPage() {
                     <th className="text-right pb-2 pr-4 text-emerald-400">TP</th>
                     <th className="text-right pb-2 pr-4 text-red-400">SL</th>
                     <th className="text-right pb-2 pr-4">Qty</th>
-                    <th className="text-right pb-2 pr-4 text-yellow-400">RR</th>
+
                     <th className="text-right pb-2 pr-4">PnL</th>
                     <th className="text-left pb-2 pr-4">Status</th>
                     <th className="text-left pb-2">Chart</th>
@@ -535,7 +532,7 @@ export default function JournalPage() {
                       <td className="py-2.5 pr-4 text-right font-mono text-emerald-400">{t.tp ?? '—'}</td>
                       <td className="py-2.5 pr-4 text-right font-mono text-red-400">{t.sl ?? '—'}</td>
                       <td className="py-2.5 pr-4 text-right font-mono">{t.order_quantity}</td>
-                      <td className="py-2.5 pr-4 text-right font-mono text-yellow-400">{t.rr !== null ? `$${t.rr}` : '—'}</td>
+
                       <td className={`py-2.5 pr-4 text-right font-mono font-bold ${pnlColor(t.pnl)}`}>
                         {tradePnlPct !== null ? (
                           <span className="flex flex-col items-end">
@@ -558,12 +555,20 @@ export default function JournalPage() {
                       </td>
                       {canEdit && (
                         <td className="py-2.5 text-right">
-                          <button
-                            onClick={() => setActionTrade(t)}
-                            className="p-1.5 rounded-lg hover:bg-muted/50 text-muted-foreground hover:text-foreground transition-colors"
-                          >
-                            <Pencil className="h-3.5 w-3.5" />
-                          </button>
+                          <div className="flex items-center justify-end gap-1">
+                            <button
+                              onClick={() => setActionTrade(t)}
+                              className="p-1.5 rounded-lg hover:bg-muted/50 text-muted-foreground hover:text-foreground transition-colors"
+                            >
+                              <Pencil className="h-3.5 w-3.5" />
+                            </button>
+                            <button
+                              onClick={() => handleDeleteTrade(t.id)}
+                              className="p-1.5 rounded-lg hover:bg-red-500/10 text-muted-foreground hover:text-red-400 transition-colors"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </button>
+                          </div>
                         </td>
                       )}
                     </tr>
