@@ -302,6 +302,219 @@ function ActionPopup({ trade, onClose, onSave, onDelete }: ActionPopupProps) {
   )
 }
 
+interface LogTradePopupProps {
+  portfolioId: string
+  onClose: () => void
+  onSave: (trade: Trade) => void
+}
+
+function LogTradePopup({ portfolioId, onClose, onSave }: LogTradePopupProps) {
+  const [symbol, setSymbol] = useState('')
+  const [direction, setDirection] = useState<'long' | 'short'>('long')
+  const [entry, setEntry] = useState('')
+  const [tp, setTp] = useState('')
+  const [sl, setSl] = useState('')
+  const [qty, setQty] = useState('')
+  const [tradedAt, setTradedAt] = useState(() => new Date().toISOString().slice(0, 16))
+  const [notes, setNotes] = useState('')
+  const [chartFile, setChartFile] = useState<File | null>(null)
+  const [chartPreview, setChartPreview] = useState<string | null>(null)
+  const [showSuggestions, setShowSuggestions] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const symbolWrapRef = useRef<HTMLDivElement>(null)
+  const fileRef = useRef<HTMLInputElement>(null)
+
+  const query = symbol.toUpperCase()
+  const suggestions = query.length === 0
+    ? ALL_SYMBOLS
+    : ALL_SYMBOLS.filter(s => s.symbol.includes(query) || s.label.toUpperCase().includes(query))
+
+  useEffect(() => {
+    function handleClick(e: MouseEvent) {
+      if (symbolWrapRef.current && !symbolWrapRef.current.contains(e.target as Node))
+        setShowSuggestions(false)
+    }
+    document.addEventListener('mousedown', handleClick)
+    return () => document.removeEventListener('mousedown', handleClick)
+  }, [])
+
+  useEffect(() => {
+    function handlePaste(e: ClipboardEvent) {
+      const item = Array.from(e.clipboardData?.items ?? []).find(i => i.type.startsWith('image/'))
+      if (!item) return
+      const file = item.getAsFile()
+      if (file) { setChartFile(file); setChartPreview(URL.createObjectURL(file)) }
+    }
+    window.addEventListener('paste', handlePaste)
+    return () => window.removeEventListener('paste', handlePaste)
+  }, [])
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    setSaving(true)
+
+    let chartUrl: string | null = null
+    if (chartFile) {
+      const form = new FormData()
+      form.append('file', chartFile)
+      const res = await fetch('/api/upload', { method: 'POST', body: form })
+      const json = await res.json()
+      if (!res.ok) { toast.error(json.error ?? 'Upload failed'); setSaving(false); return }
+      chartUrl = json.url
+    }
+
+    const entryNum = parseFloat(entry)
+    const tpNum = tp ? parseFloat(tp) : null
+    const slNum = sl ? parseFloat(sl) : null
+    const qtyNum = parseFloat(qty)
+
+    const supabase = createClient()
+    const { data, error } = await supabase.from('trades').insert({
+      portfolio_id: portfolioId,
+      symbol: symbol.toUpperCase(),
+      direction,
+      entry: entryNum,
+      tp: tpNum,
+      sl: slNum,
+      order_quantity: qtyNum,
+      chart_url: chartUrl,
+      notes: notes || null,
+      traded_at: new Date(tradedAt).toISOString(),
+    }).select().single()
+
+    if (error) { toast.error(error.message); setSaving(false); return }
+    toast.success('Trade logged')
+    onSave(data)
+    onClose()
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={onClose}>
+      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
+      <div
+        className="relative w-full max-w-lg rounded-2xl border border-border bg-card shadow-2xl overflow-y-auto max-h-[95vh]"
+        onClick={e => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between px-6 pt-5 pb-4 border-b border-border">
+          <h2 className="font-bold text-base">Log Trade</h2>
+          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-muted/50 text-muted-foreground transition-colors">
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        <form onSubmit={handleSubmit} className="p-6 space-y-5">
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-1.5" ref={symbolWrapRef}>
+              <Label>Symbol</Label>
+              <div className="relative">
+                <Input
+                  value={symbol}
+                  onChange={e => setSymbol(e.target.value.toUpperCase())}
+                  onFocus={() => setShowSuggestions(true)}
+                  onKeyDown={e => { if (e.key === 'Escape') setShowSuggestions(false) }}
+                  placeholder="GBPUSD" required autoComplete="off"
+                  className="font-mono font-bold text-emerald-400 uppercase tracking-widest h-10"
+                />
+                {showSuggestions && suggestions.length > 0 && (
+                  <div className="absolute top-full left-0 right-0 mt-1 z-50 rounded-xl border border-border bg-card shadow-xl overflow-hidden max-h-48 overflow-y-auto">
+                    {suggestions.map(s => (
+                      <button
+                        key={s.symbol} type="button"
+                        className="w-full flex items-center justify-between px-3 py-2 hover:bg-muted/40 transition-colors text-left"
+                        onMouseDown={e => { e.preventDefault(); setSymbol(s.symbol); setShowSuggestions(false) }}
+                      >
+                        <span className="text-sm font-mono font-bold">{s.symbol}</span>
+                        <span className="text-xs text-muted-foreground">{s.label}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <Label>Direction</Label>
+              <Select value={direction} onValueChange={v => setDirection(v as 'long' | 'short')}>
+                <SelectTrigger className="h-10">
+                  <span>{{ long: 'Long (Buy)', short: 'Short (Sell)' }[direction]}</span>
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="long">Long (Buy)</SelectItem>
+                  <SelectItem value="short">Short (Sell)</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-3 gap-4">
+            <div className="space-y-1.5">
+              <Label>Entry</Label>
+              <Input value={entry} onChange={e => setEntry(e.target.value)} placeholder="1.2345" required type="number" step="any" className="h-10 font-mono" />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Take Profit</Label>
+              <Input value={tp} onChange={e => setTp(e.target.value)} placeholder="1.2500" type="number" step="any" className="h-10 font-mono text-emerald-400" />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Stop Loss</Label>
+              <Input value={sl} onChange={e => setSl(e.target.value)} placeholder="1.2200" type="number" step="any" className="h-10 font-mono text-red-400" />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-1.5">
+              <Label>Quantity (lots)</Label>
+              <Input value={qty} onChange={e => setQty(e.target.value)} placeholder="0.1" required type="number" step="any" min="0" className="h-10 font-mono" />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Date &amp; Time</Label>
+              <Input value={tradedAt} onChange={e => setTradedAt(e.target.value)} type="datetime-local" required className="h-10" />
+            </div>
+          </div>
+
+          <div className="space-y-1.5">
+            <Label>Notes</Label>
+            <textarea
+              value={notes} onChange={e => setNotes(e.target.value)}
+              placeholder="Setup, confluences, thoughts…"
+              rows={3}
+              className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring resize-none"
+            />
+          </div>
+
+          <div className="space-y-1.5">
+            <Label>Chart Screenshot</Label>
+            {chartPreview ? (
+              <div className="relative rounded-xl overflow-hidden border border-border">
+                <img src={chartPreview} alt="chart" className="w-full object-cover max-h-48" />
+                <button type="button" onClick={() => { setChartFile(null); setChartPreview(null) }}
+                  className="absolute top-2 right-2 p-1 rounded-full bg-background/80 hover:bg-background border border-border text-muted-foreground hover:text-foreground transition-colors">
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+            ) : (
+              <div
+                onClick={() => fileRef.current?.click()}
+                onDragOver={e => e.preventDefault()}
+                onDrop={e => { e.preventDefault(); const f = e.dataTransfer.files[0]; if (f) { setChartFile(f); setChartPreview(URL.createObjectURL(f)) } }}
+                className="border-2 border-dashed border-border rounded-xl p-6 text-center cursor-pointer hover:border-emerald-500/50 transition-colors"
+              >
+                <Upload className="h-5 w-5 mx-auto mb-1.5 text-muted-foreground" />
+                <p className="text-sm text-muted-foreground">Drag & drop or click to upload</p>
+              </div>
+            )}
+            <input ref={fileRef} type="file" accept="image/*" className="hidden"
+              onChange={e => { const f = e.target.files?.[0]; if (f) { setChartFile(f); setChartPreview(URL.createObjectURL(f)) } }} />
+          </div>
+
+          <Button type="submit" disabled={saving} className="w-full h-10 bg-emerald-500 hover:bg-emerald-600 text-black font-bold">
+            {saving ? 'Saving…' : 'Log Trade'}
+          </Button>
+        </form>
+      </div>
+    </div>
+  )
+}
+
 export default function JournalPage() {
   const [portfolios, setPortfolios] = useState<Portfolio[]>([])
   const [activePortfolio, setActivePortfolio] = useState<Portfolio | null>(null)
@@ -311,6 +524,7 @@ export default function JournalPage() {
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null)
   const [actionTrade, setActionTrade] = useState<Trade | null>(null)
   const [statusTrade, setStatusTrade] = useState<Trade | null>(null)
+  const [showLogTrade, setShowLogTrade] = useState(false)
   const searchParams = useSearchParams()
   const router = useRouter()
   const portfolioId = searchParams.get('portfolio')
@@ -443,9 +657,7 @@ export default function JournalPage() {
             </Link>
           )}
           {canEdit && activePortfolio && (
-            <Link href={`/journal/new?portfolio=${activePortfolio.id}`}>
-              <Button className="bg-emerald-500 hover:bg-emerald-600 text-black font-bold text-xs gap-1.5"><Plus className="h-3.5 w-3.5" />Log Trade</Button>
-            </Link>
+            <Button onClick={() => setShowLogTrade(true)} className="bg-emerald-500 hover:bg-emerald-600 text-black font-bold text-xs gap-1.5"><Plus className="h-3.5 w-3.5" />Log Trade</Button>
           )}
         </div>
       </div>
@@ -579,6 +791,15 @@ export default function JournalPage() {
           )}
         </CardContent>
       </Card>
+
+      {/* Log trade popup */}
+      {showLogTrade && activePortfolio && (
+        <LogTradePopup
+          portfolioId={activePortfolio.id}
+          onClose={() => setShowLogTrade(false)}
+          onSave={trade => setTrades(prev => [trade, ...prev])}
+        />
+      )}
 
       {/* Action popup */}
       {actionTrade && (
