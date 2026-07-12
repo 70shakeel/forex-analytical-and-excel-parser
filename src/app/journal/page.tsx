@@ -62,6 +62,7 @@ function ActionPopup({ trade, onClose, onSave, onDelete }: ActionPopupProps) {
   const [qty, setQty] = useState(trade.order_quantity.toString())
 
   const status = trade.status
+  const [manualPnl, setManualPnl] = useState('')
   const [notes, setNotes] = useState(trade.notes ?? '')
   const [tradedAt, setTradedAt] = useState(() => new Date(trade.traded_at).toISOString().slice(0, 16))
   const [chartFile, setChartFile] = useState<File | null>(null)
@@ -119,8 +120,10 @@ function ActionPopup({ trade, onClose, onSave, onDelete }: ActionPopupProps) {
     const entryNum = parseFloat(entry)
     const qtyNum = parseFloat(qty)
 
-    let pnl = trade.pnl
-    if (status !== 'open') {
+    let pnl: number | null = trade.pnl
+    if (manualPnl !== '') {
+      pnl = parseFloat(manualPnl)
+    } else if (status !== 'open') {
       pnl = calcPnl(status as 'tp_hit' | 'sl_hit')
     } else {
       pnl = null
@@ -244,6 +247,12 @@ function ActionPopup({ trade, onClose, onSave, onDelete }: ActionPopupProps) {
             </div>
           </div>
 
+          {/* Manual P&L */}
+          <div className="space-y-1.5">
+            <Label>P&amp;L <span className="text-muted-foreground font-normal text-xs">(leave blank to auto-calculate)</span></Label>
+            <Input value={manualPnl} onChange={e => setManualPnl(e.target.value)} placeholder="e.g. 45.50" type="number" step="any" className="h-10 font-mono" />
+          </div>
+
           {/* Notes */}
           <div className="space-y-1.5">
             <Label>Notes</Label>
@@ -315,6 +324,7 @@ function LogTradePopup({ portfolioId, onClose, onSave }: LogTradePopupProps) {
   const [tp, setTp] = useState('')
   const [sl, setSl] = useState('')
   const [qty, setQty] = useState('')
+  const [manualPnl, setManualPnl] = useState('')
   const [tradedAt, setTradedAt] = useState(() => new Date().toISOString().slice(0, 16))
   const [notes, setNotes] = useState('')
   const [chartFile, setChartFile] = useState<File | null>(null)
@@ -367,6 +377,7 @@ function LogTradePopup({ portfolioId, onClose, onSave }: LogTradePopupProps) {
     const tpNum = tp ? parseFloat(tp) : null
     const slNum = sl ? parseFloat(sl) : null
     const qtyNum = parseFloat(qty)
+    const pnlNum = manualPnl ? parseFloat(manualPnl) : null
 
     const supabase = createClient()
     const { data, error } = await supabase.from('trades').insert({
@@ -377,6 +388,7 @@ function LogTradePopup({ portfolioId, onClose, onSave }: LogTradePopupProps) {
       tp: tpNum,
       sl: slNum,
       order_quantity: qtyNum,
+      pnl: pnlNum,
       chart_url: chartUrl,
       notes: notes || null,
       traded_at: new Date(tradedAt).toISOString(),
@@ -469,6 +481,11 @@ function LogTradePopup({ portfolioId, onClose, onSave }: LogTradePopupProps) {
               <Label>Date &amp; Time</Label>
               <Input value={tradedAt} onChange={e => setTradedAt(e.target.value)} type="datetime-local" required className="h-10" />
             </div>
+          </div>
+
+          <div className="space-y-1.5">
+            <Label>P&amp;L <span className="text-muted-foreground font-normal text-xs">(leave blank to auto-calculate)</span></Label>
+            <Input value={manualPnl} onChange={e => setManualPnl(e.target.value)} placeholder="e.g. 45.50" type="number" step="any" className="h-10 font-mono" />
           </div>
 
           <div className="space-y-1.5">
@@ -591,7 +608,11 @@ export default function JournalPage() {
 
   async function handleQuickStatus(trade: Trade, newStatus: 'open' | 'tp_hit' | 'sl_hit') {
     let pnl: number | null = null
-    if (newStatus !== 'open') {
+    if (newStatus === 'open') {
+      pnl = null
+    } else if (trade.pnl !== null) {
+      pnl = trade.pnl
+    } else {
       const price = newStatus === 'tp_hit' ? (trade.tp ?? trade.entry) : (trade.sl ?? trade.entry)
       pnl = Math.round(trade.order_quantity * (price - trade.entry) * (trade.direction === 'short' ? -1 : 1) * 100) / 100
     }
@@ -721,7 +742,6 @@ export default function JournalPage() {
                     <th className="text-right pb-2 pr-4 text-emerald-400">TP</th>
                     <th className="text-right pb-2 pr-4 text-red-400">SL</th>
                     <th className="text-right pb-2 pr-4">Qty</th>
-
                     <th className="text-right pb-2 pr-4">PnL</th>
                     <th className="text-left pb-2 pr-4">Status</th>
                     <th className="text-left pb-2">Chart</th>
@@ -744,7 +764,6 @@ export default function JournalPage() {
                       <td className="py-2.5 pr-4 text-right font-mono text-emerald-400">{t.tp ?? '—'}</td>
                       <td className="py-2.5 pr-4 text-right font-mono text-red-400">{t.sl ?? '—'}</td>
                       <td className="py-2.5 pr-4 text-right font-mono">{t.order_quantity}</td>
-
                       <td className={`py-2.5 pr-4 text-right font-mono font-bold ${pnlColor(t.pnl)}`}>
                         {tradePnlPct !== null ? (
                           <span className="flex flex-col items-end">
