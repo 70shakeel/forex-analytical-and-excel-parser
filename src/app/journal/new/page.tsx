@@ -45,6 +45,7 @@ export default function NewTradePage() {
   const [sl, setSl] = useState('')
   const [qty, setQty] = useState('')
 
+  const [pnl, setPnl] = useState('')
   const [tradedAt, setTradedAt] = useState(() => new Date().toISOString().slice(0, 16))
   const [notes, setNotes] = useState('')
   const [chartFile, setChartFile] = useState<File | null>(null)
@@ -106,6 +107,7 @@ export default function NewTradePage() {
     const tpNum = tp ? parseFloat(tp) : null
     const slNum = sl ? parseFloat(sl) : null
     const qtyNum = parseFloat(qty)
+    const pnlNum = pnl ? parseFloat(pnl) : null
     const supabase = createClient()
     const { error } = await supabase.from('trades').insert({
       portfolio_id: portfolioId,
@@ -115,6 +117,7 @@ export default function NewTradePage() {
       tp: tpNum,
       sl: slNum,
       order_quantity: qtyNum,
+      pnl: pnlNum,
       chart_url: chartUrl,
       notes: notes || null,
       traded_at: new Date(tradedAt).toISOString(),
@@ -199,10 +202,14 @@ export default function NewTradePage() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-3 gap-4">
                 <div className="space-y-1.5">
                   <Label>Order Quantity (lots)</Label>
                   <Input value={qty} onChange={e => setQty(e.target.value)} placeholder="0.1" required type="number" step="any" min="0" className="h-10 font-mono" />
+                </div>
+                <div className="space-y-1.5">
+                  <Label>P&amp;L (USD)</Label>
+                  <Input value={pnl} onChange={e => setPnl(e.target.value)} placeholder="50.00" type="number" step="any" className={`h-10 font-mono ${pnl && parseFloat(pnl) >= 0 ? 'text-emerald-400' : pnl ? 'text-red-400' : ''}`} />
                 </div>
                 <div className="space-y-1.5">
                   <Label>Date &amp; Time</Label>

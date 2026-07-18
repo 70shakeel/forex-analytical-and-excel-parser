@@ -611,7 +611,8 @@ export default function JournalPage() {
     if (newStatus === 'open') {
       pnl = null
     } else if (trade.pnl !== null) {
-      pnl = trade.pnl
+      const abs = Math.abs(trade.pnl)
+      pnl = newStatus === 'sl_hit' ? -abs : abs
     } else {
       const price = newStatus === 'tp_hit' ? (trade.tp ?? trade.entry) : (trade.sl ?? trade.entry)
       pnl = Math.round(trade.order_quantity * (price - trade.entry) * (trade.direction === 'short' ? -1 : 1) * 100) / 100
